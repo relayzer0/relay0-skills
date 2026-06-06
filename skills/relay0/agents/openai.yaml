@@ -1,0 +1,4 @@
+interface:
+  display_name: "Relay0"
+  short_description: "Use Relay0 as a scoped AI gateway"
+  default_prompt: "Use $relay0 to route requests through my Relay0 gateway."
