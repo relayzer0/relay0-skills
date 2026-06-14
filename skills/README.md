@@ -59,4 +59,5 @@ Read this skill and use it: https://raw.githubusercontent.com/relayzer0/relay0-s
 |---|---|
 | `relay0/SKILL.md` | Core agent instructions |
 | `relay0/references/agent-api.md` | Detailed agent endpoint examples |
+| `relay0/references/cli-tools.md` | Coding tool setup (Codex, Claude Code, Cursor, OpenClaw) |
 | `relay0/agents/openai.yaml` | Agent marketplace metadata |

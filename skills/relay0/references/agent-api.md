@@ -43,7 +43,7 @@ curl "$RELAY0_APP_URL/api/cloud/agent/usage?period=7d&pageSize=20" \
 
 `period` may be `today`, `24h`, `7d`, `30d`, `60d`, or `all`. `pageSize` is capped at `100`.
 
-Response shape:
+Response shape (the real payload — `details[]` carries the routing connection and the full request/response):
 
 ```json
 {
@@ -53,27 +53,51 @@ Response shape:
     "totalCompletionTokens": 40000,
     "totalTokens": 120000,
     "totalCost": 1.23,
-    "successRate": 98
+    "successRate": 98,
+    "byProvider": {},
+    "byModel": {},
+    "byApiKey": {},
+    "byEndpoint": {},
+    "last10Minutes": []
   },
   "details": [
     {
+      "id": "2026-06-06T00:00:00.000Z-abc123-gpt-5-5",
       "timestamp": "2026-06-06T00:00:00.000Z",
-      "provider": "openai",
-      "model": "cx/gpt-5.5",
+      "provider": "codex",
+      "model": "gpt-5.5",
+      "connectionId": "0773d6fb-2cf8-4cdf-a222-076232759bc4",
       "status": "success",
-      "promptTokens": 1000,
-      "completionTokens": 500,
-      "latency": 1200,
+      "latency": { "ttft": 800, "total": 1200 },
+      "tokens": { "prompt_tokens": 1000, "completion_tokens": 500 },
       "apiKeyId": "key-id",
-      "userId": "user-id"
+      "userId": "user-id",
+      "request": { "model": "codex/gpt-5.5", "messages": [], "stream": true },
+      "response": { "content": "...", "finish_reason": "completed", "thinking": null }
+    },
+    {
+      "id": "2026-06-06T00:00:00.000Z-def456-gpt-5-5",
+      "timestamp": "2026-06-06T00:00:00.000Z",
+      "provider": "codex",
+      "model": "gpt-5.5",
+      "connectionId": "59208fe6-985b-4f28-a777-164e5ddcb04c",
+      "status": "error",
+      "latency": { "ttft": 0, "total": 3153 },
+      "tokens": { "prompt_tokens": 0, "completion_tokens": 0 },
+      "response": {
+        "error": "{\"error\":{\"message\":\"Your authentication token has been invalidated...\",\"code\":\"token_invalidated\"},\"status\":401}",
+        "status": 401
+      }
     }
   ],
-  "pagination": { "page": 1, "pageSize": 20, "total": 42 },
+  "pagination": { "page": 1, "pageSize": 20, "totalItems": 42, "totalPages": 3, "hasNext": true, "hasPrev": false },
   "scoped": true
 }
 ```
 
 Owners/admins see workspace-scoped usage. Agent users see only rows tied to their assigned user/key scope.
+
+When debugging a flaky model route, read each `details[]` row's `connectionId` and `status`: a single user prompt can produce an `error` row on one connection followed by a `success` row on another when Relay0 fails over. Large `request`/`response`/`providerRequest` bodies may be truncated with `_truncated`, `_originalSize`, and `_preview` fields.
 
 ## Gateway Keys
 
@@ -147,12 +171,21 @@ Response shape:
   "connections": [
     {
       "id": "connection-id",
-      "provider": "openai",
+      "provider": "codex",
       "authType": "oauth",
       "name": "li***s@p***n.me",
       "email": "li***s@p***n.me",
+      "priority": 1,
       "isActive": true,
-      "testStatus": "ok",
+      "testStatus": "active",
+      "healthStatus": "healthy",
+      "lastHealthResult": "success",
+      "lastCheckedAt": "2026-06-14T20:39:03.049Z",
+      "lastError": null,
+      "lastErrorAt": null,
+      "consecutiveFailures": 0,
+      "expiresAt": "2026-06-16T22:53:07.637Z",
+      "providerSpecificData": { "chatgptPlanType": "pro" },
       "tenantAccess": [{ "tenantId": "tenant-id", "userId": "user-id", "projectId": "" }]
     }
   ]
@@ -160,6 +193,17 @@ Response shape:
 ```
 
 Provider secrets are never returned. OAuth emails and API keys are redacted.
+
+Health/routing fields to read before acting:
+
+- `healthStatus`: `healthy` or `unhealthy`.
+- `lastHealthResult`: for example `success` or `auth_failed`.
+- `lastError` / `lastErrorAt`: for example `Token invalid or revoked`.
+- `priority`: Relay0 tries connections in ascending priority order; a healthy lower-priority connection backs up a failed higher-priority one.
+- `modelLock_<model>`: a timestamp means that model is temporarily rate-limited / locked on this upstream.
+- `consecutiveFailures` and `backoffLevel`: rising values indicate Relay0 is backing off this connection.
+
+An OAuth connection reporting `token_invalidated` / `auth_failed` needs a human re-auth in the Relay0 app. An agent cannot repair it via the API — do not auto-disable it; tell the user to reconnect.
 
 Patch a connection:
 
@@ -223,6 +267,8 @@ For every mutation:
 3. Mutate only allowed fields: `name`, `isActive`, and backend-supported status fields.
 4. Do not include unknown fields, upstream secrets, or tenant ids in patches.
 5. Summarize object id, old state, new state, and reason.
+
+Connection mutation limits: an agent can rename, enable, or disable a **visible** connection via `PATCH /api/cloud/agent/connections`. An agent **cannot** re-authenticate an OAuth connection — expired or revoked tokens (`token_invalidated`, `auth_failed`) require the user to reconnect in the Relay0 dashboard. Never disable a connection on a transient auth error without asking.
 
 ## Errors
 
