@@ -1,4 +1,7 @@
 interface:
   display_name: "Relay0"
-  short_description: "Use Relay0 as a scoped AI gateway"
-  default_prompt: "Use $relay0 to route requests through my Relay0 gateway."
+  short_description: "Gateway models, coding tools, and agent-ops"
+  default_prompt: >
+    Use $relay0 to route through my Relay0 gateway. Discover models with GET /v1/models first.
+    Configure each coding tool with the exact model ids it needs (Codex, Claude slots, Cursor, OpenClaw).
+    Never ask for upstream provider secrets.

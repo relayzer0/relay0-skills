@@ -4,6 +4,14 @@ Use these endpoints only with `RELAY0_APP_URL` and `Authorization: Bearer $RELAY
 
 Never log bearer keys. Never ask for upstream provider API keys or OAuth tokens.
 
+**Model ids for coding tools are not listed here.** Discover them on the gateway:
+
+```bash
+curl -sS "$RELAY0_BASE_URL/models" -H "Authorization: Bearer $RELAY0_API_KEY"
+```
+
+Use each `data[].id` verbatim when configuring Codex, Claude Code, Cursor, OpenClaw, etc. See `../SKILL.md` (model playbook) and `cli-tools.md` (per-tool knobs). Agent-ops `usage` rows may show a bare upstream model name; still configure tools with the gateway alias from `/models`.
+
 ## Common headers
 
 ```bash

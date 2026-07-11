@@ -1,35 +1,62 @@
 # Relay0 Coding Tool Setup
 
-Configure coding agents to route through a Relay0 gateway. Every tool needs two things: the gateway base URL (`$RELAY0_BASE_URL`, e.g. `https://api.userelay0.com/v1`) and a Relay0 gateway key (`$RELAY0_API_KEY`).
+Every tool needs:
 
-Always pick the default model from `/models` and use the alias verbatim (for example `cx/gpt-5.5`, not `gpt-5.5`):
+1. **Base URL** — Workspace `https://api.userelay0.com/v1` or Grid `https://grid.userelay0.com/v1` (must match key type).
+2. **Relay0 gateway key** — never an upstream provider key.
+3. **Model id(s)** — exact `data[].id` from `GET $RELAY0_BASE_URL/models`.
 
 ```bash
-curl "$RELAY0_BASE_URL/models" -H "Authorization: Bearer $RELAY0_API_KEY"
+export RELAY0_BASE_URL="https://api.userelay0.com/v1"   # or grid.userelay0.com/v1
+export RELAY0_API_KEY="sk-..."
+
+# List ids this key can use (source of truth)
+curl -sS "$RELAY0_BASE_URL/models" \
+  -H "Authorization: Bearer $RELAY0_API_KEY" | jq -r '.data[].id'
 ```
 
-Never put an upstream provider key anywhere in these configs. Relay0 only uses Relay0 gateway keys.
+**Workspace ids** are often prefixed (`xai/grok-4.5`, `cx/gpt-5.5`). **Grid retail ids** are often bare (`grok-4.5`). Always copy what `/models` returns for *this* host + key.
+
+The hosted installer (`/setup?token=&capacity=byok|grid&tools=all`) writes these files for you. This doc is for agents and manual edits — especially **changing models per tool**.
+
+---
+
+## How to change models (agent recipe)
+
+1. `GET /models` → pick `MODEL_ID` (and optional `FAST_ID`, `STRONG_ID`).
+2. Edit the tool section below; replace only the model fields.
+3. Restart the tool.
+4. Smoke-test the matching wire endpoint (`/responses` for Codex, `/messages` for Claude, `/chat/completions` for most others).
+
+You may assign **different** ids to different tools or slots. Relay0 does not require one shared model.
+
+---
 
 ## Codex
 
-Codex splits its config across two files and speaks the Responses API.
+Files:
 
-`~/.codex/config.toml` — routing (no key here):
+- `~/.codex/config.toml` — routing + **preferred** auth via `experimental_bearer_token`
+- `~/.codex/auth.json` — keep in sync (`auth_mode = "apikey"`, `OPENAI_API_KEY` = Relay0 key)
+
+### Installer-correct config.toml
 
 ```toml
-model = "cx/gpt-5.5"
+model = "xai/grok-4.5"
 model_provider = "relay0"
 
 [model_providers.relay0]
 name = "Relay0"
 base_url = "https://api.userelay0.com/v1"
+experimental_bearer_token = "sk-...relay0-gateway-key"
 wire_api = "responses"
+requires_openai_auth = false
 
 [agents.subagent]
-model = "cx/gpt-5.5"
+model = "xai/grok-4.5"
 ```
 
-`~/.codex/auth.json` — the key. The field is named `OPENAI_API_KEY`, but the value is the **Relay0 gateway key**:
+### auth.json
 
 ```json
 {
@@ -38,23 +65,41 @@ model = "cx/gpt-5.5"
 }
 ```
 
-Notes:
+Clear stale ChatGPT login fields (`tokens`, `access_token`, `refresh_token`, `id_token`) if present so subscription auth does not override Relay0.
 
-- `wire_api = "responses"` is required — Codex will not work against plain chat completions.
-- Restart Codex after editing these files.
-- Leave any other `[model_providers.*]` blocks in place if the user wants to switch back; only `model_provider` selects the active one.
-- Verify with a Responses call before declaring success:
+### Change the model
+
+1. List ids from `/models`.
+2. Set root `model = "<id>"`.
+3. Optionally set `[agents.subagent] model = "<other-id>"` for a cheaper subagent.
+4. Do **not** invent bare names if the catalog shows prefixes.
+5. Restart Codex.
+
+### Why not `env_key` alone?
+
+Codex `env_key = "OPENAI_API_KEY"` requires that variable in the **shell environment**. Many users only have the key in `auth.json` or the TOML bearer field → error **Missing OPENAI_API_KEY**. Prefer `experimental_bearer_token` (installer default) and still sync `auth.json`.
+
+### Rules
+
+- `wire_api = "responses"` is required.
+- Codex must call `/responses` semantics, not only chat completions.
+- Leave other `[model_providers.*]` blocks if the user switches providers; only `model_provider` selects the active one.
+- Grid: set `base_url` to `https://grid.userelay0.com/v1` and use Grid retail ids.
+
+### Verify
 
 ```bash
 curl -X POST "$RELAY0_BASE_URL/responses" \
   -H "Authorization: Bearer $RELAY0_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"cx/gpt-5.5","input":"Reply with exactly: Codex via Relay0 OK","max_output_tokens":20}'
+  -d '{"model":"<id-from-/models>","input":"Reply with exactly: Codex via Relay0 OK","max_output_tokens":20}'
 ```
+
+---
 
 ## Claude Code
 
-Claude Code uses Anthropic-style env vars / `settings.json`. Point the base URL at the Relay0 gateway and use the gateway key as the auth token:
+File: `~/.claude/settings.json` (env map). Claude Code has **three model slots** that can each be a different Relay0 id.
 
 ```json
 {
@@ -62,33 +107,64 @@ Claude Code uses Anthropic-style env vars / `settings.json`. Point the base URL 
   "env": {
     "ANTHROPIC_BASE_URL": "https://api.userelay0.com/v1",
     "ANTHROPIC_AUTH_TOKEN": "sk-...relay0-gateway-key",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "cx/gpt-5.5",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "cx/gpt-5.5",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "cc/claude-opus-4-6",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "xai/grok-4.5",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "cx/gpt-5.4-mini"
   }
 }
 ```
 
-Map the Opus/Sonnet/Haiku slots to whatever aliases `/models` exposes. Requests use the Anthropic `/messages` shape, which Relay0 accepts.
+### Map slots from `/models`
+
+| Slot | Env key | Prefer ids matching |
+|---|---|---|
+| Opus (strong) | `ANTHROPIC_DEFAULT_OPUS_MODEL` | `opus`, `thinking`, top-tier `gpt-5`, `grok-4` |
+| Sonnet (default) | `ANTHROPIC_DEFAULT_SONNET_MODEL` | `sonnet`, mid-tier coding, `gpt-5.4` / `gpt-5.5` |
+| Haiku (fast) | `ANTHROPIC_DEFAULT_HAIKU_MODEL` | `haiku`, `mini`, `flash`, `lite` |
+
+If only one model is visible, set all three slots to that same id (installer behavior). Later, re-split when more ids appear.
+
+Optional: `ANTHROPIC_MODEL` for a single default override if the user’s Claude build respects it.
+
+Requests use Anthropic `/messages`; Relay0 accepts that shape with the same model ids.
+
+### Change one slot
+
+Edit only that env key in `settings.json`, save, restart Claude Code. Confirm with:
+
+```bash
+curl -X POST "$RELAY0_BASE_URL/messages" \
+  -H "Authorization: Bearer $RELAY0_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"<slot-id>","max_tokens":64,"messages":[{"role":"user","content":"ping"}]}'
+```
+
+---
 
 ## Cursor
 
-Cursor is OpenAI-compatible. In Settings -> Models:
+Manual UI (Settings → Models):
 
-1. Enable "Override OpenAI Base URL" and set it to `https://api.userelay0.com/v1`.
-2. Set the OpenAI API key to your Relay0 gateway key.
-3. Add a custom model whose name matches a Relay0 alias from `/models` (for example `cx/gpt-5.5`), then verify the connection.
+1. Enable OpenAI-compatible / override base URL → `$RELAY0_BASE_URL` (include `/v1`).
+2. API key → Relay0 gateway key.
+3. Add a **custom model** whose name is the exact `/models` id.
+4. To use multiple models: add multiple custom models (one id each); pick in the chat model menu.
 
-The same pattern works for any OpenAI-compatible client: base URL + bearer key + an exact alias.
+There is no separate “Relay0 model list” inside Cursor — the custom model string is what gets sent as `model`.
+
+---
 
 ## OpenClaw
 
-OpenClaw takes a provider block in its JSON config:
+Typical file: `~/.openclaw/openclaw.json`
 
 ```json
 {
   "agents": {
-    "defaults": { "model": { "primary": "relay0/cx/gpt-5.5" } }
+    "defaults": {
+      "model": { "primary": "relay0/xai/grok-4.5" }
+    }
   },
   "models": {
     "providers": {
@@ -97,7 +173,8 @@ OpenClaw takes a provider block in its JSON config:
         "apiKey": "sk-...relay0-gateway-key",
         "api": "openai-completions",
         "models": [
-          { "id": "cx/gpt-5.5", "name": "cx/gpt-5.5" }
+          { "id": "xai/grok-4.5", "name": "xai/grok-4.5" },
+          { "id": "cx/gpt-5.4-mini", "name": "cx/gpt-5.4-mini" }
         ]
       }
     }
@@ -105,17 +182,173 @@ OpenClaw takes a provider block in its JSON config:
 }
 ```
 
-Populate `models[]` from `/models`. Reference models elsewhere as `relay0/<alias>`.
+### Model reference rules
+
+- Provider registry lists **raw** ids in `models[]` (same as `/models`).
+- Default / agent refs use **`relay0/<raw-id>`** (provider slug + slash + raw id).
+- Populate `models[]` from the full catalog (or the first ~20 coding-relevant ids).
+- Change primary: set `agents.defaults.model.primary` to `relay0/<new-id>` and ensure that id exists in `models[]`.
+
+---
+
+## OpenCode
+
+File: `~/.config/opencode/opencode.json` (path may vary)
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "relay0": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Relay0",
+      "options": {
+        "baseURL": "https://api.userelay0.com/v1",
+        "apiKey": "sk-...relay0-gateway-key"
+      },
+      "models": {
+        "xai/grok-4.5": { "name": "xai/grok-4.5" },
+        "cx/gpt-5.4-mini": { "name": "cx/gpt-5.4-mini" }
+      }
+    }
+  },
+  "model": "relay0/xai/grok-4.5",
+  "agent": {
+    "explorer": {
+      "description": "Fast codebase exploration",
+      "mode": "subagent",
+      "model": "relay0/cx/gpt-5.4-mini"
+    }
+  }
+}
+```
+
+Use different `model` vs `agent.*.model` for strong primary + cheap explorer.
+
+---
+
+## Cline
+
+- Global state (often `~/.cline/data/globalState.json`): OpenAI provider, **base URL without `/v1`** in some builds, `openAiModelId` / plan-mode model id.
+- Secrets: `openAiApiKey` = Relay0 key.
+
+Set act vs plan models to different Relay0 ids if desired.
+
+---
+
+## Roo / Kilo / generic OpenAI-compatible UIs
+
+```text
+Provider: OpenAI Compatible
+Base URL: https://api.userelay0.com/v1   # some want without /v1 — try both if 404
+API Key:  sk-...relay0-gateway-key
+Model:    <exact id from /models>
+```
+
+If the UI has separate “plan” and “act” models, assign two ids from the catalog.
+
+---
+
+## Continue (VS Code / JetBrains)
+
+Add one object per model to the Continue `models` array:
+
+```json
+{
+  "apiBase": "https://api.userelay0.com/v1",
+  "title": "Relay0 Grok",
+  "model": "xai/grok-4.5",
+  "provider": "openai",
+  "apiKey": "sk-...relay0-gateway-key"
+}
+```
+
+Duplicate and change `model` / `title` for each catalog entry you want in the picker.
+
+---
+
+## Amp CLI / shell-first tools
+
+```bash
+export OPENAI_API_KEY="sk-...relay0-gateway-key"
+export OPENAI_BASE_URL="https://api.userelay0.com/v1"
+amp --model "xai/grok-4.5"
+```
+
+Pass the exact id on the CLI or in the tool’s model flag.
+
+---
+
+## Qwen Code / DeepSeek TUI / Factory Droid / Hermes / jcode
+
+Pattern is always the same:
+
+| Field | Value |
+|---|---|
+| Provider mode | OpenAI-compatible |
+| Base URL | `$RELAY0_BASE_URL` |
+| API key | Relay0 gateway key |
+| Model | Exact `/models` id |
+
+Example DeepSeek TUI `~/.deepseek/config.toml`:
+
+```toml
+provider = "openai"
+base_url = "https://api.userelay0.com/v1"
+api_key = "sk-...relay0-gateway-key"
+model = "xai/grok-4.5"
+```
+
+Example jcode multi-model profiles:
+
+```toml
+[providers.relay0]
+type = "openai"
+base_url = "https://api.userelay0.com/v1"
+api_key = "sk-...relay0-gateway-key"
+
+[agents.default]
+model = "xai/grok-4.5"
+provider = "relay0"
+
+[agents.fast]
+model = "cx/gpt-5.4-mini"
+provider = "relay0"
+```
+
+---
+
+## Hosted installer and cleanup
+
+```text
+# Configure all supported tools (prompts capacity if omitted)
+https://app.userelay0.com/setup?token=sk-...&capacity=byok&tools=all
+https://app.userelay0.com/setup?token=sk-...&capacity=grid&tools=all
+
+# Cleanup Relay0 configuration
+https://app.userelay0.com/setup?tools=cleanup
+```
+
+Installer behavior agents should know:
+
+- Resolves default model from live `/models` (Grid fallback may be `grok-4.5` if catalog empty).
+- Codex: writes `experimental_bearer_token` + syncs `auth.json`.
+- Claude: may set all three slots to the same default; re-split manually for multi-model.
+- Wrong capacity/host → 403; re-run with correct `capacity=` or new key from the matching Keys page.
+
+---
 
 ## Verify any tool
 
-After configuring, confirm the gateway answers before handing back to the user:
-
 ```bash
-curl -X POST "$RELAY0_BASE_URL/chat/completions" \
+MODEL_ID="<paste-from-/models>"
+
+curl -sS -X POST "$RELAY0_BASE_URL/chat/completions" \
   -H "Authorization: Bearer $RELAY0_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"cx/gpt-5.5","messages":[{"role":"user","content":"ping"}],"stream":false}'
+  -d "{\"model\":\"$MODEL_ID\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"stream\":false}"
 ```
 
-If it fails, see the troubleshooting decision tree in `SKILL.md`.
+Codex: also verify `/responses`. Claude: also verify `/messages`.
+
+If it fails, see the troubleshooting tree in `SKILL.md` (host mismatch, empty catalog, bad id, Codex bearer).

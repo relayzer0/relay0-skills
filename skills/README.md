@@ -1,6 +1,6 @@
 # Relay0 Skills
 
-Agent-ready skills for Relay0. The entry skill teaches an agent how to call the Relay0 `/v1` gateway, discover scoped models, inspect usage, check quotas, and manage agent-safe keys or provider connections without exposing upstream provider secrets.
+Agent-ready skills for Relay0. The entry skill teaches an agent how to call the Relay0 `/v1` gateway, discover scoped models via `GET /v1/models`, configure **different models per coding tool** (Codex, Claude Code slots, Cursor, OpenClaw, …), pick Workspace (`api.*`) vs Grid (`grid.*`), inspect usage/quotas, and manage agent-safe keys or provider connections without exposing upstream provider secrets.
 
 ## Install With skills.sh
 
@@ -42,7 +42,7 @@ Use a Relay0 gateway key assigned to an owner, admin, or agent sub-account for `
 ## Agent Prompt
 
 ```text
-Use $relay0 to route requests through my Relay0 gateway. Discover visible models first. Never ask for upstream provider secrets.
+Use $relay0 to route requests through my Relay0 gateway. Discover visible models with GET /v1/models first. Map exact model ids into each coding tool (Codex model=, Claude OPUS/SONNET/HAIKU slots, Cursor custom models, OpenClaw relay0/<id>). Never invent model names. Never ask for upstream provider secrets.
 ```
 
 ## Manual Use
@@ -57,7 +57,7 @@ Read this skill and use it: https://raw.githubusercontent.com/relayzer0/relay0-s
 
 | Path | Purpose |
 |---|---|
-| `relay0/SKILL.md` | Core agent instructions |
+| `relay0/SKILL.md` | Core agent instructions: model discovery, per-tool models, health-check, agent-ops |
+| `relay0/references/cli-tools.md` | Per-tool config + how to change models later |
 | `relay0/references/agent-api.md` | Detailed agent endpoint examples |
-| `relay0/references/cli-tools.md` | Coding tool setup (Codex, Claude Code, Cursor, OpenClaw) |
 | `relay0/agents/openai.yaml` | Agent marketplace metadata |
