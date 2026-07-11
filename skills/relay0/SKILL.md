@@ -2,7 +2,7 @@
 name: relay0
 description: >
   Use Relay0 as a scoped multi-tenant AI gateway and agent-ops API. Prefer the `relay0` CLI
-  (`relay0 models`, `relay0 doctor`, `relay0 whoami`, `relay0 usage`, `relay0 config pull`)
+  (`relay0 models`, `relay0 set`, `relay0 get`, `relay0 doctor`)
   over scraping config files or hand-rolled curl. Trigger when the user mentions Relay0; wants
   different models on Codex, Claude Code, Cursor, OpenClaw, or other coding tools; needs to
   discover models; configure base URL or gateway key; run the setup installer or cleanup; check
@@ -53,8 +53,13 @@ relay0 usage --period 7d
 1. Prefer `relay0 models` / `relay0 set` / `relay0 get` over scraping configs or curl.
 2. Prefer `~/.relay0/cli.json` over secrets in tool configs.
 3. If `command not found: relay0`, try `$HOME/.local/bin/relay0`; else re-run setup.
-4. Model ids must come from `relay0 models` verbatim.
+4. Model ids must come from `relay0 models` (or `relay0 models --cache`) verbatim.
 5. Fall back to `references/cli-tools.md` only when `relay0 set` does not support the tool.
+6. **Network / DNS failures (critical — do not hang):**
+   - Errors like `nodename nor servname provided`, `Name or service not known`, timeouts, or connection refused mean the sandbox/host cannot reach the gateway.
+   - **Report once and stop.** Do not retry `relay0 models` more than once. Do not sit in a long “Working…” loop.
+   - Immediately try offline path: `relay0 models --cache` and/or `relay0 set <tool> model <id>` (set/get work offline).
+   - If the user already named a model id (e.g. `xai/grok-4.5`), run `relay0 set <tool> model <that-id>` without re-fetching the catalog.
 
 ## Install this skill
 
@@ -116,62 +121,31 @@ If only `RELAY0_BASE_URL` is set, derive `RELAY0_APP_URL` only when obvious (`ap
 
 When the user asks “what models can I use?”, “switch my model”, “use Grok/Claude/GPT in this tool”, or you need to configure a client:
 
-### Step 1 — Discover (mandatory, same for every tool)
-
-**Preferred:**
+### Step 1 — Discover
 
 ```bash
 relay0 models
-# or
-relay0 models --json
+# if DNS/network fails (once only — do not hang):
+relay0 models --cache
 ```
 
-**Fallback** (no CLI / not logged in):
+- Use exact model id strings.
+- On DNS/network error: report once, use `--cache` or the id the user already named, then Step 3.
+- Never retry `relay0 models` more than once when DNS fails.
+
+### Step 2 — Pick an id
+
+If the user already named a model (e.g. `xai/grok-4.5`), use it. Otherwise filter `relay0 models` / `--cache` output.
+
+### Step 3 — Apply with CLI only (mandatory)
 
 ```bash
-curl -sS "$RELAY0_BASE_URL/models" \
-  -H "Authorization: Bearer $RELAY0_API_KEY" | jq -r '.data[].id'
+relay0 set <tool> model <exact-id>
 ```
 
-- Use **exact** model id strings. Do not strip prefixes. Do not invent names from memory.
-- Empty list → no visible capacity for this key/host. Tell the user:
-  - Workspace: connect providers at `/providers` and ensure the key can see them.
-  - Grid: ask an admin to publish pool models; confirm Grid key + `grid.*` host.
-- Usage logs may show a bare upstream name while the request used a Relay0 alias — always configure clients with the **alias/`id` from discovery**.
+Examples: `relay0 set codex model xai/grok-4.5` · `relay0 set claude model cx/gpt-5.5`
 
-### Step 2 — Pick ids by intent
-
-Heuristics (apply only to ids actually returned):
-
-| Intent | Prefer ids matching |
-|---|---|
-| Strong coding / default | `grok-4.5`, `gpt-5`, `sonnet`, `opus`, `codex` |
-| Fast / cheap | `mini`, `haiku`, `flash`, `lite` |
-| Avoid for chat agents | `embed`, `tts`, `whisper`, `image`, `dall`, `audio`, smoke/test ids |
-
-If the user names a brand (“use Grok”, “use Claude”), filter discovery for that substring; if multiple, prefer the highest tier visible; if none, report available ids and stop.
-
-### Step 3 — Apply the id to the tool they care about
-
-Discovery is shared. **Where the id is stored is tool-specific** — full recipes in `references/cli-tools.md`.
-
-Order of preference when applying:
-
-1. Tool’s built-in model picker / session flag / UI (if the user is in that app).
-2. `relay0 config pull --tool <name>` or the hosted `/setup` installer to rewrite defaults.
-3. Manual edit of that tool’s config file only for the model field(s).
-
-| Tool | Where the model is set | Notes |
-|---|---|---|
-| **Claude Code** | `~/.claude/settings.json` → `env.ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL` | Three slots can point at **different** Relay0 ids. |
-| **Codex** | `~/.codex/config.toml` → `model = "<id>"` | Needs `wire_api = "responses"` + Relay0 bearer; session: `/model` or `-m`. |
-| **Cursor** | Settings → Models → custom model name = exact id | Base URL + OpenAI-compatible key. |
-| **OpenClaw** | `agents.defaults.model.primary` = `relay0/<id>` + `models.providers.relay0.models[]` | Prefix `relay0/` only in primary refs. |
-| **OpenCode** | `model`: `relay0/<id>` | Subagents can use a cheaper id. |
-| **Cline / Kilo / Roo / Amp / …** | OpenAI-compatible model id field | Some UIs want base URL **without** trailing `/v1`. |
-| **Continue** | `models[]` entry: `model` + `apiBase` + `apiKey` | One object per id. |
-| **Generic OpenAI SDK** | request body `model` | Same id from discovery. |
-| **Anthropic-shaped client** | request body `model` + `/messages` | Same id; Relay0 accepts Anthropic wire format. |
+**Forbidden when CLI works:** hand-editing `~/.codex/config.toml`, Claude `settings.json`, etc.
 
 ### Step 4 — Verify with the wire format that tool uses
 
