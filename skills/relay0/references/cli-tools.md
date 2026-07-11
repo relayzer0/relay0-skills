@@ -9,15 +9,25 @@ Every tool needs:
 ### Prefer the `relay0` CLI (any coding tool)
 
 ```bash
-relay0 auth login --app https://app.userelay0.com --gateway-key sk-... --agent-key sk-...
-relay0 models                      # source of truth for ids (tool-agnostic)
-relay0 models --json
-relay0 config pull --tool all      # or: claude | codex | openclaw | …
-relay0 env pull --shell zsh
+export PATH="$HOME/.local/bin:$HOME/.relay0/bin:$PATH"
+
+relay0 models                                 # source of truth for ids
+relay0 set <tool> model <exact-id>            # change default model for a tool
+relay0 set claude model <id> --slot haiku     # Claude slot: all|opus|sonnet|haiku
+relay0 get <tool> model
 relay0 doctor
 ```
 
-Agents should run `relay0 models` / `relay0 doctor` instead of scraping **any** tool’s local config for tokens, or hand-rolling `curl`, unless the CLI is unavailable.
+Examples:
+
+```bash
+relay0 set codex model cx/gpt-5.5
+relay0 set claude model xai/grok-4.5
+relay0 set openclaw model cx/gpt-5.4-mini
+relay0 set opencode model xai/grok-4.5
+```
+
+Agents should run `relay0 set` / `relay0 models` instead of scraping tool configs or hand-rolling curl.
 
 Fallback without CLI:
 
@@ -37,17 +47,18 @@ The hosted installer (`/setup?token=&capacity=byok|grid&tools=all`) writes these
 
 ## How to change models (agent recipe)
 
-Works the same for every client:
+```bash
+relay0 models
+relay0 set <tool> model <exact-id-from-models>
+# restart the tool if it is already running
+```
 
-1. **Discover once:** `relay0 models` (or `GET /models`) → pick `MODEL_ID` (optional `FAST_ID` / `STRONG_ID`).
-2. **Apply to the tool the user named** (not every tool):
-   - Prefer that tool’s built-in model picker / session flag / UI when available.
-   - Or re-run setup / `relay0 config pull --tool <name>`.
-   - Or edit only the model field(s) in that tool’s section below.
-3. Restart the tool if it caches config.
-4. Smoke-test the wire format that tool uses (`/chat/completions`, `/messages`, or `/responses` — see each section).
+That is enough for codex, claude, openclaw, opencode, cline, qwen, hermes, droid, jcode, shell.
+Claude slots: `--slot opus|sonnet|haiku|all` (default all).
 
-You may assign **different** ids to different tools or slots. Relay0 does not require one shared model.
+Cursor / Continue: CLI prints UI instructions (no reliable file API).
+
+You may assign **different** ids to different tools or slots.
 
 ---
 

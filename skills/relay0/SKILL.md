@@ -23,46 +23,38 @@ Relay0 is an OpenAI-compatible gateway plus an agent-safe management API. Use it
 
 ## Prefer the `relay0` CLI (agents: start here)
 
-The CLI is the **tool-agnostic** path for discovery, health, usage, and config snippets. It works the same whether the user runs Claude Code, Cursor, Codex, OpenClaw, OpenCode, Cline, or a raw SDK.
-
-Do **not** scrape secrets out of any coding-tool config (`settings.json`, `config.toml`, IDE state, etc.) or invent ad-hoc curl when the CLI is available.
+The CLI is the **tool-agnostic** path for discovery, health, and **changing models**.
 
 ```bash
-# After Relay0 setup, the portable CLI lives here (always prefer these paths):
-#   ~/.local/bin/relay0
-#   ~/.relay0/bin/relay0
-#   profile: ~/.relay0/cli.json  (mode 600)
 export PATH="$HOME/.local/bin:$HOME/.relay0/bin:$PATH"
 
-relay0 auth status
-relay0 whoami
+relay0 models                              # list ids (use exactly)
+relay0 set codex model cx/gpt-5.5          # change a tool default
+relay0 set claude model xai/grok-4.5
+relay0 set claude model cx/gpt-5.4-mini --slot haiku
+relay0 get codex model
+relay0 get claude model
 relay0 doctor
-relay0 models              # list tenant-visible model ids — use these verbatim
-relay0 models --json
+relay0 whoami
 relay0 usage --period 7d
 ```
 
-If `relay0` is not on PATH but the file exists:
+**Canonical model change:** `relay0 set <tool> model <exact-id>` — do not hand-edit configs when this works.
 
-```bash
-"$HOME/.local/bin/relay0" models
-# or re-run setup: curl -fsSL "https://app.userelay0.com/setup?token=…&skill=yes" | bash
-```
-
-| User asks | Run first |
+| User asks | Run |
 |---|---|
-| What models do I have? / GPT / Claude / Grok? | `relay0 models` (or full path above) |
-| Is my key / setup working? | `relay0 doctor` then `relay0 whoami` |
-| Recent spend | `relay0 usage --period 7d` |
-| Where is my key/profile? | `relay0 auth status` → `~/.relay0/cli.json` |
+| What models? | `relay0 models` |
+| Switch tool to model X | `relay0 set <tool> model <id>` |
+| What is tool using? | `relay0 get <tool> model` |
+| Health | `relay0 doctor` |
 
 **Rules for agents**
 
-1. Prefer `relay0 …` (or `$HOME/.local/bin/relay0`) over scraping tool configs or hand-rolled curl.
-2. Prefer `~/.relay0/cli.json` + env (`RELAY0_*`) over reading secrets from **any** tool’s local config.
-3. If `command not found: relay0`: check `~/.local/bin/relay0` and `~/.relay0/bin/relay0`; if missing, tell the user to re-run Relay0 setup (it installs the CLI + profile). Do **not** invent a global npm package as the only fix — setup installs a portable binary.
-4. If profile missing: re-run setup, or set `RELAY0_BASE_URL` + `RELAY0_API_KEY` and use curl fallback.
-5. **Changing models is per-tool** — discover once with `relay0 models`, then apply the id where *that* tool stores it (see playbook + `references/cli-tools.md`).
+1. Prefer `relay0 models` / `relay0 set` / `relay0 get` over scraping configs or curl.
+2. Prefer `~/.relay0/cli.json` over secrets in tool configs.
+3. If `command not found: relay0`, try `$HOME/.local/bin/relay0`; else re-run setup.
+4. Model ids must come from `relay0 models` verbatim.
+5. Fall back to `references/cli-tools.md` only when `relay0 set` does not support the tool.
 
 ## Install this skill
 
