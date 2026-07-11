@@ -4,18 +4,32 @@ Every tool needs:
 
 1. **Base URL** — Workspace `https://api.userelay0.com/v1` or Grid `https://grid.userelay0.com/v1` (must match key type).
 2. **Relay0 gateway key** — never an upstream provider key.
-3. **Model id(s)** — exact `data[].id` from `GET $RELAY0_BASE_URL/models`.
+3. **Model id(s)** — exact ids from discovery (never invent).
+
+### Prefer the `relay0` CLI
+
+```bash
+relay0 auth login --app https://app.userelay0.com --gateway-key sk-... --agent-key sk-...
+relay0 models                 # source of truth for ids
+relay0 models --json
+relay0 config pull --tool codex    # refresh snippet for codex | claude | openclaw | all
+relay0 env pull --shell zsh
+relay0 doctor
+```
+
+Agents should run `relay0 models` instead of scraping `~/.codex/config.toml` for tokens or hand-rolling `curl` unless the CLI is unavailable.
+
+Fallback without CLI:
 
 ```bash
 export RELAY0_BASE_URL="https://api.userelay0.com/v1"   # or grid.userelay0.com/v1
 export RELAY0_API_KEY="sk-..."
 
-# List ids this key can use (source of truth)
 curl -sS "$RELAY0_BASE_URL/models" \
   -H "Authorization: Bearer $RELAY0_API_KEY" | jq -r '.data[].id'
 ```
 
-**Workspace ids** are often prefixed (`xai/grok-4.5`, `cx/gpt-5.5`). **Grid retail ids** are often bare (`grok-4.5`). Always copy what `/models` returns for *this* host + key.
+**Workspace ids** are often prefixed (`xai/grok-4.5`, `cx/gpt-5.5`). **Grid retail ids** are often bare (`grok-4.5`). Always copy what discovery returns for *this* host + key.
 
 The hosted installer (`/setup?token=&capacity=byok|grid&tools=all`) writes these files for you. This doc is for agents and manual edits — especially **changing models per tool**.
 
@@ -23,10 +37,11 @@ The hosted installer (`/setup?token=&capacity=byok|grid&tools=all`) writes these
 
 ## How to change models (agent recipe)
 
-1. `GET /models` → pick `MODEL_ID` (and optional `FAST_ID`, `STRONG_ID`).
-2. Edit the tool section below; replace only the model fields.
-3. Restart the tool.
-4. Smoke-test the matching wire endpoint (`/responses` for Codex, `/messages` for Claude, `/chat/completions` for most others).
+1. `relay0 models` (or `GET /models`) → pick `MODEL_ID` (and optional `FAST_ID`, `STRONG_ID`).
+2. **Codex (human-friendly):** tell the user to use **`/model`** in the TUI or `codex -m "<id>"` for this session. To persist the default, edit `model =` in `~/.codex/config.toml` (or re-run setup / `relay0 config pull --tool codex` after changing the default in console).
+3. For other tools: edit the tool section below; replace only the model fields.
+4. Restart the tool if it caches config.
+5. Smoke-test the matching wire endpoint (`/responses` for Codex, `/messages` for Claude, `/chat/completions` for most others).
 
 You may assign **different** ids to different tools or slots. Relay0 does not require one shared model.
 

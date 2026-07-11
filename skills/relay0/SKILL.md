@@ -1,24 +1,68 @@
 ---
 name: relay0
 description: >
-  Use Relay0 as a scoped multi-tenant AI gateway and agent-ops API. Trigger when the user
-  mentions Relay0; wants different models on Codex, Claude Code, Cursor, OpenClaw, or other
-  coding tools; needs to discover models via GET /v1/models; configure base URL or gateway key;
-  run the Relay0 setup installer or cleanup; check usage/quotas; manage keys or provider
-  connections; debug a model route or empty catalog; or pick Workspace (api.*) vs Grid (grid.*)
-  hosts — all without exposing upstream provider secrets.
+  Use Relay0 as a scoped multi-tenant AI gateway and agent-ops API. Prefer the `relay0` CLI
+  (`relay0 models`, `relay0 doctor`, `relay0 whoami`, `relay0 usage`, `relay0 config pull`)
+  over scraping config files or hand-rolled curl. Trigger when the user mentions Relay0; wants
+  different models on Codex, Claude Code, Cursor, OpenClaw, or other coding tools; needs to
+  discover models; configure base URL or gateway key; run the setup installer or cleanup; check
+  usage/quotas; manage keys or provider connections; debug a model route or empty catalog; or
+  pick Workspace (api.*) vs Grid (grid.*) hosts — without exposing upstream provider secrets.
 ---
 
 # Relay0
 
 Relay0 is an OpenAI-compatible gateway plus an agent-safe management API. Use it to:
 
-1. Discover which models a gateway key can actually call (`GET /v1/models`).
+1. Discover which models a gateway key can actually call.
 2. Wire coding tools (Codex, Claude Code, Cursor, OpenClaw, …) to Relay0 **with the correct model ids per tool**.
 3. Call chat / responses / messages endpoints.
-4. Inspect usage, quotas, keys, and provider health via the Agent API.
+4. Inspect usage, quotas, keys, and provider health.
 
-**Critical rule:** never invent model names. Always use exact `id` values from `/v1/models` for that key + host.
+**Critical rule:** never invent model names. Always use exact `id` values from model discovery for that key + host.
+
+## Prefer the `relay0` CLI (agents: start here)
+
+Do **not** scrape `experimental_bearer_token` from `~/.codex/config.toml` or invent curl pipelines when the CLI is available.
+
+```bash
+# Install once (npm package ships the `relay0` binary)
+npm i -g 9router   # or: npx 9router — see package bin "relay0"
+
+# Save workspace profile (~/.relay0/cli.json, mode 0600)
+relay0 auth login \
+  --app https://app.userelay0.com \
+  --gateway-key sk-... \
+  --agent-key sk-...
+
+relay0 auth status
+relay0 whoami
+relay0 doctor
+relay0 models              # list tenant-visible model ids — use these verbatim
+relay0 models --json
+relay0 usage --period 7d
+relay0 keys list
+relay0 connections list
+relay0 env pull --shell zsh
+relay0 config pull --tool codex    # or claude | openclaw | all
+relay0 open                        # open the console
+```
+
+| User asks | Run first |
+|---|---|
+| What models do I have? / any GPT/Claude/Grok? | `relay0 models` (filter output; or `--json`) |
+| Is my key / setup working? | `relay0 doctor` then `relay0 whoami` |
+| Recent spend / which connection served traffic? | `relay0 usage --period 7d` |
+| Refresh Codex / Claude / OpenClaw snippets | `relay0 config pull --tool <name>` |
+| Env exports for shell tools | `relay0 env pull --shell zsh` |
+
+**Rules for agents**
+
+1. Prefer `relay0 …` over raw `curl` to `/v1/models` or `/api/cloud/agent/*`.
+2. Prefer `~/.relay0/cli.json` + env (`RELAY0_*`) over reading secrets out of tool configs.
+3. If `relay0` is missing: install via `npm i -g 9router`, or fall back to env + curl (below).
+4. If not logged in: run `relay0 auth login` (or set `RELAY0_BASE_URL` + `RELAY0_API_KEY`).
+5. Codex model switch for humans: **`/model` in the TUI** or `codex -m "<exact-id>"`. Default in config: edit `model =` in `~/.codex/config.toml` only when saving a permanent default.
 
 ## Install this skill
 
@@ -28,7 +72,9 @@ npx skills add relayzer0/relay0-skills --skill relay0
 
 ## Setup (env)
 
-Read config from environment first. Hosted SaaS defaults:
+Read config in this order: **`relay0` profile** (`~/.relay0/cli.json`) → environment → tool configs (last resort).
+
+Hosted SaaS defaults:
 
 ```bash
 # Workspace (BYOK) — providers the user connects under /providers
@@ -42,9 +88,11 @@ export RELAY0_API_KEY="sk-..."            # Relay0 gateway key (not OpenAI/Anthr
 export RELAY0_AGENT_KEY="$RELAY0_API_KEY" # same key often works for agent-ops
 ```
 
-Source an env file when the user has one:
+Or pull exports:
 
 ```bash
+eval "$(relay0 env pull --shell zsh)"
+# or
 set -a && source /path/to/relay0-agent.env && set +a
 ```
 
@@ -78,16 +126,26 @@ When the user asks “what models can I use?”, “set Claude to Grok”, “sw
 
 ### Step 1 — Discover (mandatory)
 
+**Preferred:**
+
+```bash
+relay0 models
+# or
+relay0 models --json
+```
+
+**Fallback** (no CLI / not logged in):
+
 ```bash
 curl -sS "$RELAY0_BASE_URL/models" \
   -H "Authorization: Bearer $RELAY0_API_KEY" | jq -r '.data[].id'
 ```
 
-- Use **exact** `data[].id` strings. Do not strip prefixes. Do not invent names from memory.
+- Use **exact** model id strings. Do not strip prefixes. Do not invent names from memory.
 - Empty list → no visible capacity for this key/host. Tell the user:
   - Workspace: connect providers at `/providers` and ensure the key can see them.
   - Grid: ask an admin to publish pool models; confirm Grid key + `grid.*` host.
-- Usage logs may show a bare upstream name while the request used a Relay0 alias — always configure tools with the **alias/`id` from `/models`**.
+- Usage logs may show a bare upstream name while the request used a Relay0 alias — always configure tools with the **alias/`id` from discovery**.
 
 ### Step 2 — Pick ids by intent
 
@@ -191,12 +249,22 @@ After install, agents should still re-list `/models` before recommending a diffe
 
 ## Health-check playbook
 
-When asked to test/verify/check Relay0:
+When asked to test/verify/check Relay0, **prefer the CLI**:
+
+```bash
+relay0 doctor
+relay0 whoami
+relay0 models
+relay0 connections list
+relay0 usage --period 7d
+```
+
+HTTP fallback (same order of intent):
 
 1. `GET $RELAY0_APP_URL/api/cloud/agent/summary` — role, permissions, key active.
 2. `GET $RELAY0_BASE_URL/models` — visible model count + sample ids.
 3. `GET $RELAY0_APP_URL/api/cloud/agent/connections` — healthy vs unhealthy.
-4. Live call on `/responses` or `/chat/completions` with a real `/models` id.
+4. Live call on `/responses` or `/chat/completions` with a real model id.
 5. `GET .../usage?period=7d&pageSize=5` — which `connectionId` served the request (failover may succeed after an error row).
 
 ---
