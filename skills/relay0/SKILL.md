@@ -233,7 +233,7 @@ https://app.userelay0.com/setup?token=sk-...&capacity=byok&tools=all&skill=yes
 - Prompts or uses `capacity=byok|grid` → correct host.
 - Fetches `/models` and picks a sensible default for every selected tool.
 - Writes each tool’s native config (Claude env slots, Codex provider + bearer, OpenClaw provider block, shell env, …).
-- **Asks whether to install this Relay0 skill** (default yes on interactive TTY). Force with `skill=yes` / `RELAY0_INSTALL_SKILL=1`, skip with `skill=no` / `0`.
+- **Asks whether to install or update this Relay0 skill** (default yes). If the skill is already present, setup runs `npx skills update relay0` and re-adds from the package so agents get the latest. Force with `skill=yes` / `RELAY0_INSTALL_SKILL=1`, skip with `skill=no` / `0`.
 - Cleanup: `tools=cleanup` removes Relay0 blocks without nuking the whole user config when possible.
 
 After install, agents should still re-run `relay0 models` before recommending a different default.
