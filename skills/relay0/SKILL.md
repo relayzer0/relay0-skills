@@ -23,11 +23,13 @@ Relay0 is an OpenAI-compatible gateway plus an agent-safe management API. Use it
 
 ## Prefer the `relay0` CLI (agents: start here)
 
-Do **not** scrape `experimental_bearer_token` from `~/.codex/config.toml` or invent curl pipelines when the CLI is available.
+The CLI is the **tool-agnostic** path for discovery, health, usage, and config snippets. It works the same whether the user runs Claude Code, Cursor, Codex, OpenClaw, OpenCode, Cline, or a raw SDK.
+
+Do **not** scrape secrets out of any coding-tool config (`settings.json`, `config.toml`, IDE state, etc.) or invent ad-hoc curl when the CLI is available.
 
 ```bash
 # Install once (npm package ships the `relay0` binary)
-npm i -g 9router   # or: npx 9router — see package bin "relay0"
+npm i -g 9router   # or: npx — package bin is "relay0"
 
 # Save workspace profile (~/.relay0/cli.json, mode 0600)
 relay0 auth login \
@@ -44,25 +46,25 @@ relay0 usage --period 7d
 relay0 keys list
 relay0 connections list
 relay0 env pull --shell zsh
-relay0 config pull --tool codex    # or claude | openclaw | all
+relay0 config pull --tool all      # or: claude | codex | openclaw | …
 relay0 open                        # open the console
 ```
 
 | User asks | Run first |
 |---|---|
-| What models do I have? / any GPT/Claude/Grok? | `relay0 models` (filter output; or `--json`) |
+| What models do I have? / GPT / Claude / Grok? | `relay0 models` (filter the list; or `--json`) |
 | Is my key / setup working? | `relay0 doctor` then `relay0 whoami` |
 | Recent spend / which connection served traffic? | `relay0 usage --period 7d` |
-| Refresh Codex / Claude / OpenClaw snippets | `relay0 config pull --tool <name>` |
-| Env exports for shell tools | `relay0 env pull --shell zsh` |
+| Refresh setup snippets for any tool | `relay0 config pull --tool <name\|all>` |
+| Env exports for shell / generic clients | `relay0 env pull --shell zsh` |
 
 **Rules for agents**
 
 1. Prefer `relay0 …` over raw `curl` to `/v1/models` or `/api/cloud/agent/*`.
-2. Prefer `~/.relay0/cli.json` + env (`RELAY0_*`) over reading secrets out of tool configs.
+2. Prefer `~/.relay0/cli.json` + env (`RELAY0_*`) over reading secrets from **any** tool’s local config.
 3. If `relay0` is missing: install via `npm i -g 9router`, or fall back to env + curl (below).
 4. If not logged in: run `relay0 auth login` (or set `RELAY0_BASE_URL` + `RELAY0_API_KEY`).
-5. Codex model switch for humans: **`/model` in the TUI** or `codex -m "<exact-id>"`. Default in config: edit `model =` in `~/.codex/config.toml` only when saving a permanent default.
+5. **Changing models is per-tool** — discover once with `relay0 models`, then apply the id where *that* tool stores it (see playbook + `references/cli-tools.md`). Prefer the tool’s own model picker / CLI flag when it has one; edit config files only to persist a default.
 
 ## Install this skill
 
@@ -122,9 +124,9 @@ If only `RELAY0_BASE_URL` is set, derive `RELAY0_APP_URL` only when obvious (`ap
 
 ## Agent playbook: figure out models for any tool
 
-When the user asks “what models can I use?”, “set Claude to Grok”, “switch Codex model”, or you need to configure a tool:
+When the user asks “what models can I use?”, “switch my model”, “use Grok/Claude/GPT in this tool”, or you need to configure a client:
 
-### Step 1 — Discover (mandatory)
+### Step 1 — Discover (mandatory, same for every tool)
 
 **Preferred:**
 
@@ -145,7 +147,7 @@ curl -sS "$RELAY0_BASE_URL/models" \
 - Empty list → no visible capacity for this key/host. Tell the user:
   - Workspace: connect providers at `/providers` and ensure the key can see them.
   - Grid: ask an admin to publish pool models; confirm Grid key + `grid.*` host.
-- Usage logs may show a bare upstream name while the request used a Relay0 alias — always configure tools with the **alias/`id` from discovery**.
+- Usage logs may show a bare upstream name while the request used a Relay0 alias — always configure clients with the **alias/`id` from discovery**.
 
 ### Step 2 — Pick ids by intent
 
@@ -157,44 +159,50 @@ Heuristics (apply only to ids actually returned):
 | Fast / cheap | `mini`, `haiku`, `flash`, `lite` |
 | Avoid for chat agents | `embed`, `tts`, `whisper`, `image`, `dall`, `audio`, smoke/test ids |
 
-If the user names a brand (“use Grok”, “use Claude”), filter `/models` for that substring; if multiple, prefer the highest tier visible; if none, report available ids and stop.
+If the user names a brand (“use Grok”, “use Claude”), filter discovery for that substring; if multiple, prefer the highest tier visible; if none, report available ids and stop.
 
-### Step 3 — Map id → tool-specific knobs
+### Step 3 — Apply the id to the tool they care about
 
-Each tool stores the model in a different place. Full copy-paste configs: `references/cli-tools.md`.
+Discovery is shared. **Where the id is stored is tool-specific** — full recipes in `references/cli-tools.md`.
+
+Order of preference when applying:
+
+1. Tool’s built-in model picker / session flag / UI (if the user is in that app).
+2. `relay0 config pull --tool <name>` or the hosted `/setup` installer to rewrite defaults.
+3. Manual edit of that tool’s config file only for the model field(s).
 
 | Tool | Where the model is set | Notes |
 |---|---|---|
-| **Codex** | `~/.codex/config.toml` → `model = "<id>"` (and optional `[agents.subagent] model`) | Provider: `experimental_bearer_token` + `wire_api = "responses"`. Also keep `auth.json` `OPENAI_API_KEY` = Relay0 key. |
-| **Claude Code** | `~/.claude/settings.json` → `env.ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL` | Three slots can point at **different** Relay0 ids. Optional `ANTHROPIC_MODEL`. |
-| **Cursor** | Settings → Models → custom model name = exact id | Base URL + OpenAI-compatible key; custom model string must match `/models`. |
-| **OpenClaw** | `openclaw.json` → `agents.defaults.model.primary` = `relay0/<id>` and list entries under `models.providers.relay0.models[]` | Provider key is `relay0`; primary uses `relay0/` prefix + raw id. |
-| **OpenCode** | `opencode.json` → `model`: `relay0/<id>`; more under `provider.relay0.models` | Can set explorer/subagent to a cheaper id. |
-| **Cline / Kilo / Roo** | OpenAI-compatible model id field | Some UIs want base URL **without** trailing `/v1`. |
-| **Continue** | `models[]` entry: `model` + `apiBase` + `apiKey` | Duplicate objects for multiple Relay0 models. |
-| **Generic OpenAI SDK** | request body `model` | Same id as `/models`. |
+| **Claude Code** | `~/.claude/settings.json` → `env.ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL` | Three slots can point at **different** Relay0 ids. |
+| **Codex** | `~/.codex/config.toml` → `model = "<id>"` | Needs `wire_api = "responses"` + Relay0 bearer; session: `/model` or `-m`. |
+| **Cursor** | Settings → Models → custom model name = exact id | Base URL + OpenAI-compatible key. |
+| **OpenClaw** | `agents.defaults.model.primary` = `relay0/<id>` + `models.providers.relay0.models[]` | Prefix `relay0/` only in primary refs. |
+| **OpenCode** | `model`: `relay0/<id>` | Subagents can use a cheaper id. |
+| **Cline / Kilo / Roo / Amp / …** | OpenAI-compatible model id field | Some UIs want base URL **without** trailing `/v1`. |
+| **Continue** | `models[]` entry: `model` + `apiBase` + `apiKey` | One object per id. |
+| **Generic OpenAI SDK** | request body `model` | Same id from discovery. |
 | **Anthropic-shaped client** | request body `model` + `/messages` | Same id; Relay0 accepts Anthropic wire format. |
 
-### Step 4 — Apply and verify
+### Step 4 — Verify with the wire format that tool uses
 
-1. Edit only the target tool’s config (or re-run installer — see below).
+1. Change only the target tool (other tools keep their own defaults).
 2. Restart the tool if it caches config.
-3. Smoke-test the **wire format that tool uses**:
+3. Smoke-test:
 
 ```bash
-# OpenAI chat (Cursor, many CLIs)
+# Most OpenAI-compatible clients
 curl -sS -X POST "$RELAY0_BASE_URL/chat/completions" \
   -H "Authorization: Bearer $RELAY0_API_KEY" \
   -H "Content-Type: application/json" \
   -d "{\"model\":\"$MODEL_ID\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"stream\":false}"
 
-# Codex / Responses
+# Responses API clients (e.g. Codex)
 curl -sS -X POST "$RELAY0_BASE_URL/responses" \
   -H "Authorization: Bearer $RELAY0_API_KEY" \
   -H "Content-Type: application/json" \
   -d "{\"model\":\"$MODEL_ID\",\"input\":\"Reply with exactly: OK\",\"max_output_tokens\":20}"
 
-# Claude Code /messages
+# Anthropic Messages clients (e.g. Claude Code)
 curl -sS -X POST "$RELAY0_BASE_URL/messages" \
   -H "Authorization: Bearer $RELAY0_API_KEY" \
   -H "anthropic-version: 2023-06-01" \
@@ -202,15 +210,11 @@ curl -sS -X POST "$RELAY0_BASE_URL/messages" \
   -d "{\"model\":\"$MODEL_ID\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}"
 ```
 
-4. Optional: confirm routing via Agent API usage (`details[].connectionId`, `status`).
+4. Optional: `relay0 usage --period 7d` to see which connection served the request.
 
 ### Different models per tool (and per slot)
 
-This is supported and expected:
-
-- Codex default `model = "xai/grok-4.5"` while Claude Sonnet slot is `cc/claude-sonnet-…` and Haiku is a mini id.
-- OpenClaw primary expensive, explorer/subagent cheap.
-- Cursor custom models: add **multiple** custom model names, each an exact `/models` id; user picks in the UI.
+Supported and expected: Claude’s three slots, OpenClaw primary vs explorer, Cursor custom models, Codex default vs subagent — each can be a different discovery id.
 
 Do **not** assume one global “Relay0 model” for all tools. Discover once, then set each tool independently.
 
@@ -227,13 +231,12 @@ https://app.userelay0.com/setup?token=sk-...&capacity=byok&tools=all&skill=yes
 ```
 
 - Prompts or uses `capacity=byok|grid` → correct host.
-- Fetches `/models` and picks a sensible default.
-- Writes Codex with `experimental_bearer_token` (not bare `env_key` alone — `env_key` fails if `OPENAI_API_KEY` is unset in the shell).
-- Maps Claude’s three slots (installer may set all three to the same default; you can re-split later).
-- **Asks whether to install this Relay0 skill** via `npx skills add relayzer0/relay0-skills --skill relay0 -g …` (default yes on interactive TTY). Force with `skill=yes` / `RELAY0_INSTALL_SKILL=1`, skip with `skill=no` / `RELAY0_INSTALL_SKILL=0`.
-- Cleanup: `tools=cleanup` or installer cleanup mode removes Relay0 blocks without nuking the whole user config when possible.
+- Fetches `/models` and picks a sensible default for every selected tool.
+- Writes each tool’s native config (Claude env slots, Codex provider + bearer, OpenClaw provider block, shell env, …).
+- **Asks whether to install this Relay0 skill** (default yes on interactive TTY). Force with `skill=yes` / `RELAY0_INSTALL_SKILL=1`, skip with `skill=no` / `0`.
+- Cleanup: `tools=cleanup` removes Relay0 blocks without nuking the whole user config when possible.
 
-After install, agents should still re-list `/models` before recommending a different default.
+After install, agents should still re-run `relay0 models` before recommending a different default.
 
 ---
 
@@ -271,59 +274,50 @@ HTTP fallback (same order of intent):
 
 ## Chat and coding requests
 
+Use the wire format your **client** speaks. Model id is always from discovery.
+
 ```bash
-# Chat completions
+# OpenAI-compatible chat (most CLIs, SDKs, Cursor-like tools)
 curl -X POST "$RELAY0_BASE_URL/chat/completions" \
   -H "Authorization: Bearer $RELAY0_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"<id-from-/models>","messages":[{"role":"user","content":"Hello"}],"stream":false}'
+  -d '{"model":"<id-from-discovery>","messages":[{"role":"user","content":"Hello"}],"stream":false}'
 
-# Anthropic Messages (Claude Code)
+# Anthropic Messages
 curl -X POST "$RELAY0_BASE_URL/messages" \
   -H "Authorization: Bearer $RELAY0_API_KEY" \
   -H "anthropic-version: 2023-06-01" \
   -H "Content-Type: application/json" \
-  -d '{"model":"<id-from-/models>","max_tokens":1024,"messages":[{"role":"user","content":"Hello"}]}'
+  -d '{"model":"<id-from-discovery>","max_tokens":1024,"messages":[{"role":"user","content":"Hello"}]}'
 
-# Responses (Codex) — required wire; chat completions alone is not enough for Codex
+# OpenAI Responses
 curl -X POST "$RELAY0_BASE_URL/responses" \
   -H "Authorization: Bearer $RELAY0_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"<id-from-/models>","input":"Reply with exactly: Relay0 OK","max_output_tokens":20}'
+  -d '{"model":"<id-from-discovery>","input":"Reply with exactly: Relay0 OK","max_output_tokens":20}'
 ```
 
 ---
 
 ## Coding tool setup
 
-Read **`references/cli-tools.md`** for full configs and “change model later” recipes.
+Read **`references/cli-tools.md`** for per-tool config and “change model later” recipes.
 
-Quick Codex shape (current installer truth):
+Prefer:
 
-```toml
-model = "<id-from-/models>"
-model_provider = "relay0"
+1. Hosted `/setup` or `relay0 config pull --tool <name|all>`
+2. Console setup snippets at `https://app.userelay0.com`
+3. Manual file edits only when the user already uses a specific tool
 
-[model_providers.relay0]
-name = "Relay0"
-base_url = "https://api.userelay0.com/v1"   # or grid.userelay0.com/v1
-experimental_bearer_token = "sk-..."      # Relay0 gateway key
-wire_api = "responses"
-requires_openai_auth = false
-```
-
-Also set `~/.codex/auth.json`:
-
-```json
-{
-  "auth_mode": "apikey",
-  "OPENAI_API_KEY": "sk-...relay0-gateway-key"
-}
-```
+Do not treat any single coding agent as the default product path.
 
 ---
 
 ## Agent operations
+
+Prefer CLI: `relay0 whoami`, `relay0 usage`, `relay0 keys list`, `relay0 connections list`.
+
+HTTP fallback:
 
 ```bash
 curl "$RELAY0_APP_URL/api/cloud/agent/summary" \
@@ -354,22 +348,23 @@ From `GET .../connections`:
 
 | Signal | Action |
 |---|---|
-| `401` gateway | Check `RELAY0_API_KEY`; Codex auth_mode / bearer token |
+| `401` gateway | Check `RELAY0_API_KEY` / tool is using the Relay0 key (not an upstream key) |
 | `403` gateway | Host/key capacity mismatch (api vs grid) |
 | `403` agent-ops | Missing `manageKeys` / `manageConnections` |
-| Empty `/models` | No visible providers for this key/lane |
-| Model not found | Wrong id — re-fetch `/models`; do not strip prefixes |
-| Codex silent/fail | `wire_api = "responses"`, hit `/responses`, bearer present |
-| Intermittent fail | Check connections + usage failover rows |
+| Empty model list | No visible providers for this key/lane |
+| Model not found | Wrong id — re-run `relay0 models`; do not strip prefixes |
+| Tool won’t route | Confirm base URL + key + **exact** model id for that tool’s wire format |
+| Intermittent fail | `relay0 connections list` + `relay0 usage` (failover rows) |
 
 ```
-401 on gateway        -> RELAY0_API_KEY; Codex experimental_bearer_token + auth.json
-403 on gateway        -> api.* vs grid.* mismatch for key type
-empty /models         -> connect providers (BYOK) or publish Grid pool; wrong host
-model not found       -> exact id from /models for this host
-Codex Missing OPENAI_API_KEY -> use experimental_bearer_token (not env_key alone)
-OAuth token_invalidated -> human reconnect in app; do not auto-disable
+401 on gateway           -> RELAY0_API_KEY; re-run setup or env pull for the affected tool
+403 on gateway           -> api.* vs grid.* mismatch for key type
+empty models             -> connect providers (BYOK) or publish Grid pool; wrong host
+model not found          -> exact id from relay0 models for this host
+OAuth token_invalidated  -> human reconnect in app; do not auto-disable
 ```
+
+Tool-specific auth footguns (Claude env vars, Codex bearer + `wire_api=responses`, etc.) live in `references/cli-tools.md` — look them up **after** identifying which tool failed.
 
 ---
 
@@ -379,7 +374,7 @@ OAuth token_invalidated -> human reconnect in app; do not auto-disable
 Relay0: checked <summary/usage/models/connections/tools>.
 Host/lane: <api workspace | grid> <base url>.
 Visible models: <count>; using <id> for <tool>.
-Per-tool models: Codex=<id>, Claude opus/sonnet/haiku=<ids>, …
+Per-tool models: <tool>=<id>, … (only tools the user asked about).
 Usage: <requests/tokens if checked>; routed via <connection if known>.
 Actions: <none or mutation summary>.
 Risk: <missing key / empty catalog / unhealthy OAuth / host mismatch / …>.

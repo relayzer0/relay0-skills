@@ -2,6 +2,6 @@ interface:
   display_name: "Relay0"
   short_description: "Gateway models, coding tools, and agent-ops"
   default_prompt: >
-    Use $relay0 to route through my Relay0 gateway. Discover models with GET /v1/models first.
-    Configure each coding tool with the exact model ids it needs (Codex, Claude slots, Cursor, OpenClaw).
-    Never ask for upstream provider secrets.
+    Use $relay0. Prefer the relay0 CLI (models, doctor, whoami, usage, config pull) for any coding
+    tool — not just one agent. Discover model ids once, then apply them per tool. Never invent ids
+    or ask for upstream provider secrets.

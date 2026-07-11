@@ -6,18 +6,18 @@ Every tool needs:
 2. **Relay0 gateway key** — never an upstream provider key.
 3. **Model id(s)** — exact ids from discovery (never invent).
 
-### Prefer the `relay0` CLI
+### Prefer the `relay0` CLI (any coding tool)
 
 ```bash
 relay0 auth login --app https://app.userelay0.com --gateway-key sk-... --agent-key sk-...
-relay0 models                 # source of truth for ids
+relay0 models                      # source of truth for ids (tool-agnostic)
 relay0 models --json
-relay0 config pull --tool codex    # refresh snippet for codex | claude | openclaw | all
+relay0 config pull --tool all      # or: claude | codex | openclaw | …
 relay0 env pull --shell zsh
 relay0 doctor
 ```
 
-Agents should run `relay0 models` instead of scraping `~/.codex/config.toml` for tokens or hand-rolling `curl` unless the CLI is unavailable.
+Agents should run `relay0 models` / `relay0 doctor` instead of scraping **any** tool’s local config for tokens, or hand-rolling `curl`, unless the CLI is unavailable.
 
 Fallback without CLI:
 
@@ -37,11 +37,15 @@ The hosted installer (`/setup?token=&capacity=byok|grid&tools=all`) writes these
 
 ## How to change models (agent recipe)
 
-1. `relay0 models` (or `GET /models`) → pick `MODEL_ID` (and optional `FAST_ID`, `STRONG_ID`).
-2. **Codex (human-friendly):** tell the user to use **`/model`** in the TUI or `codex -m "<id>"` for this session. To persist the default, edit `model =` in `~/.codex/config.toml` (or re-run setup / `relay0 config pull --tool codex` after changing the default in console).
-3. For other tools: edit the tool section below; replace only the model fields.
-4. Restart the tool if it caches config.
-5. Smoke-test the matching wire endpoint (`/responses` for Codex, `/messages` for Claude, `/chat/completions` for most others).
+Works the same for every client:
+
+1. **Discover once:** `relay0 models` (or `GET /models`) → pick `MODEL_ID` (optional `FAST_ID` / `STRONG_ID`).
+2. **Apply to the tool the user named** (not every tool):
+   - Prefer that tool’s built-in model picker / session flag / UI when available.
+   - Or re-run setup / `relay0 config pull --tool <name>`.
+   - Or edit only the model field(s) in that tool’s section below.
+3. Restart the tool if it caches config.
+4. Smoke-test the wire format that tool uses (`/chat/completions`, `/messages`, or `/responses` — see each section).
 
 You may assign **different** ids to different tools or slots. Relay0 does not require one shared model.
 
