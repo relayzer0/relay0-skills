@@ -334,6 +334,7 @@ Installer behavior agents should know:
 - Resolves default model from live `/models` (Grid fallback may be `grok-4.5` if catalog empty).
 - Codex: writes `experimental_bearer_token` + syncs `auth.json`.
 - Claude: may set all three slots to the same default; re-split manually for multi-model.
+- Offers to install the **Relay0 agent skill** (`npx skills add relayzer0/relay0-skills --skill relay0 -g -y`). Interactive default is yes; non-interactive needs `skill=yes` or `RELAY0_INSTALL_SKILL=1`.
 - Wrong capacity/host → 403; re-run with correct `capacity=` or new key from the matching Keys page.
 
 ---

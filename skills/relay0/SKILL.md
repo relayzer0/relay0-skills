@@ -164,12 +164,15 @@ Hosted setup script configures tools from a live catalog:
 
 ```text
 https://app.userelay0.com/setup?token=sk-...&capacity=byok|grid&tools=all
+# Non-interactive skill install (optional):
+https://app.userelay0.com/setup?token=sk-...&capacity=byok&tools=all&skill=yes
 ```
 
 - Prompts or uses `capacity=byok|grid` → correct host.
 - Fetches `/models` and picks a sensible default.
 - Writes Codex with `experimental_bearer_token` (not bare `env_key` alone — `env_key` fails if `OPENAI_API_KEY` is unset in the shell).
 - Maps Claude’s three slots (installer may set all three to the same default; you can re-split later).
+- **Asks whether to install this Relay0 skill** via `npx skills add relayzer0/relay0-skills --skill relay0 -g …` (default yes on interactive TTY). Force with `skill=yes` / `RELAY0_INSTALL_SKILL=1`, skip with `skill=no` / `RELAY0_INSTALL_SKILL=0`.
 - Cleanup: `tools=cleanup` or installer cleanup mode removes Relay0 blocks without nuking the whole user config when possible.
 
 After install, agents should still re-list `/models` before recommending a different default.
